@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import logging
@@ -26,6 +27,9 @@ FOLLOWER_PORT_FILE = os.path.join(PORT_CONFIG_PATH, "follower_port.txt")
 CONFIG_STORAGE_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/saved_configs")
 LEADER_CONFIG_FILE = os.path.join(CONFIG_STORAGE_PATH, "leader_config.txt")
 FOLLOWER_CONFIG_FILE = os.path.join(CONFIG_STORAGE_PATH, "follower_config.txt")
+
+# Robot config records (per-robot JSON metadata)
+ROBOTS_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/robots")
 
 def setup_calibration_files(leader_config: str, follower_config: str):
     """Setup calibration files in the correct locations for teleoperation and recording"""
@@ -308,9 +312,132 @@ def get_default_robot_config(robot_type: str, available_configs: list):
     saved_config = get_saved_robot_config(robot_type)
     if saved_config and saved_config in available_configs:
         return saved_config
-    
+
     # Return first available config as fallback
     if available_configs:
         return available_configs[0]
-    
+
     return None
+
+
+# ---------------------------------------------------------------------------
+# Robot record helpers
+# ---------------------------------------------------------------------------
+
+# Characters disallowed in a robot name (filesystem safety)
+_INVALID_NAME_CHARS = ("/", "\\", "..")
+_ROBOT_FIELDS = ("leader_port", "follower_port", "leader_config", "follower_config")
+
+
+def _robot_record_path(name: str) -> str:
+    return os.path.join(ROBOTS_PATH, f"{name}.json")
+
+
+def is_valid_robot_name(name: str) -> bool:
+    """Check that a robot name is safe to use as a filename."""
+    if not name or not isinstance(name, str):
+        return False
+    if name.strip() != name:
+        return False
+    return not any(bad in name for bad in _INVALID_NAME_CHARS)
+
+
+def _empty_record(name: str) -> dict:
+    record = {"name": name}
+    for field in _ROBOT_FIELDS:
+        record[field] = ""
+    return record
+
+
+def get_robot_record(name: str) -> dict | None:
+    """Return the robot record by name, or None if missing."""
+    path = _robot_record_path(name)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        logger.error(f"Failed to read robot record {name}: {e}")
+        return None
+    # Ensure all expected fields exist (forward/back compat)
+    record = _empty_record(name)
+    record.update({k: v for k, v in data.items() if k in record})
+    record["name"] = name
+    return record
+
+
+def list_robot_records() -> list[dict]:
+    """Return all robot records on disk."""
+    if not os.path.exists(ROBOTS_PATH):
+        return []
+    records = []
+    for filename in sorted(os.listdir(ROBOTS_PATH)):
+        if not filename.endswith(".json"):
+            continue
+        name = os.path.splitext(filename)[0]
+        record = get_robot_record(name)
+        if record is not None:
+            records.append(record)
+    return records
+
+
+def save_robot_record(name: str, data: dict, allow_create: bool = True) -> bool:
+    """
+    Upsert a robot record. Merges `data` into the existing record, preserving
+    fields not provided. Returns True if a write occurred, False if no-oped.
+
+    - If the record exists: merge and write.
+    - If the record does not exist and `allow_create` is True: create with empty
+      fields then merge.
+    - If the record does not exist and `allow_create` is False: log and no-op.
+    """
+    if not is_valid_robot_name(name):
+        logger.error(f"Invalid robot name: {name!r}")
+        return False
+
+    os.makedirs(ROBOTS_PATH, exist_ok=True)
+    existing = get_robot_record(name)
+    if existing is None and not allow_create:
+        logger.info(f"save_robot_record no-op: {name} does not exist (allow_create=False)")
+        return False
+
+    record = existing if existing is not None else _empty_record(name)
+    for field in _ROBOT_FIELDS:
+        if field in data and isinstance(data[field], str):
+            record[field] = data[field]
+    record["name"] = name
+
+    path = _robot_record_path(name)
+    with open(path, "w") as f:
+        json.dump(record, f, indent=2)
+    logger.info(f"Saved robot record {name}: {record}")
+    return True
+
+
+def delete_robot_record(name: str) -> bool:
+    """Delete a robot record. Returns True if a file was removed."""
+    if not is_valid_robot_name(name):
+        return False
+    path = _robot_record_path(name)
+    if not os.path.exists(path):
+        return False
+    os.remove(path)
+    logger.info(f"Deleted robot record {name}")
+    return True
+
+
+def is_robot_record_clean(record: dict) -> bool:
+    """
+    A record is 'clean' when all four operational fields are populated AND both
+    referenced calibration files exist on disk.
+    """
+    if not record:
+        return False
+    for field in _ROBOT_FIELDS:
+        value = record.get(field, "")
+        if not isinstance(value, str) or not value.strip():
+            return False
+    leader_path = os.path.join(LEADER_CONFIG_PATH, record["leader_config"])
+    follower_path = os.path.join(FOLLOWER_CONFIG_PATH, record["follower_config"])
+    return os.path.exists(leader_path) and os.path.exists(follower_path)
