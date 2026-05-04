@@ -1,6 +1,7 @@
 import importlib.util
 import logging
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -17,7 +18,18 @@ logger = logging.getLogger(__name__)
 TRAINING_AVAILABLE: bool = importlib.util.find_spec("accelerate") is not None
 TRAINING_INSTALL_HINT: str = "pip install accelerate"
 
-INSTALL_CMD: List[str] = [sys.executable, "-m", "pip", "install", "accelerate"]
+
+def _build_install_cmd() -> List[str]:
+    """Pick the best installer for the running Python.
+
+    Venvs created with `uv venv` don't ship pip, so `python -m pip` fails with
+    `No module named pip`. Detect uv on PATH and use it with --python pinned to
+    sys.executable so the install lands in this Python's site-packages.
+    Otherwise fall back to `python -m pip`.
+    """
+    if shutil.which("uv"):
+        return ["uv", "pip", "install", "--python", sys.executable, "accelerate"]
+    return [sys.executable, "-m", "pip", "install", "accelerate"]
 
 
 class TrainingExtraStatus(BaseModel):
@@ -56,7 +68,7 @@ class InstallManager:
 
         try:
             self.process = subprocess.Popen(
-                INSTALL_CMD,
+                _build_install_cmd(),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
