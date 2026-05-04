@@ -811,7 +811,7 @@ const Calibration = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-slate-200">
                 <Settings className="w-5 h-5 text-blue-400" />
-                Cameras
+                Attached cameras
               </CardTitle>
             </CardHeader>
             <CardContent>
