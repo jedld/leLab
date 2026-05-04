@@ -193,9 +193,19 @@ const TrainingExtraGate: React.FC<Props> = ({ installHint }) => {
           )}
 
           {state === "done" && (
-            <p className="text-slate-300">
-              Install complete. Restart <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab</code> (Ctrl+C in the terminal running it, then re-run <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab --dev</code> or <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab</code>) to enable training.
-            </p>
+            <div className="space-y-3 text-slate-300">
+              <p>
+                Install complete. Restart <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab</code> to enable training:
+              </p>
+              <ol className="list-decimal list-inside space-y-2 pl-1">
+                <li>
+                  Press <kbd className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-600 text-xs font-mono text-slate-200">Ctrl+C</kbd> in the terminal running <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab</code>.
+                </li>
+                <li>
+                  Run <code className="px-1 py-0.5 rounded bg-slate-900 text-sky-300">lelab</code> again.
+                </li>
+              </ol>
+            </div>
           )}
 
           {state === "error" && (
