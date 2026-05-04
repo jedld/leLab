@@ -102,8 +102,12 @@ const Calibration = () => {
     (async () => {
       const r = await fetchRobot();
       if (!r || cancelled) return;
-      const defaultDevice =
-        !r.leader_config && r.follower_config ? "robot" : "teleop";
+      // Default to the first incomplete side in the checklist (leader, then follower).
+      const defaultDevice = !r.leader_config
+        ? "teleop"
+        : !r.follower_config
+        ? "robot"
+        : "teleop";
       setDeviceType(defaultDevice);
       setPort(
         defaultDevice === "teleop"
