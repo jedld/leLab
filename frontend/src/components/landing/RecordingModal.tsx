@@ -188,7 +188,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       min="1"
                       value={episodeTimeS}
                       onChange={(e) =>
-                        setEpisodeTimeS(parseInt(e.target.value) || 1)
+                        setEpisodeTimeS(parseInt(e.target.value))
                       }
                       className="bg-gray-800 border-gray-700 text-white"
                     />
@@ -206,7 +206,7 @@ const RecordingModal: React.FC<RecordingModalProps> = ({
                       min="1"
                       value={resetTimeS}
                       onChange={(e) =>
-                        setResetTimeS(parseInt(e.target.value) || 1)
+                        setResetTimeS(parseInt(e.target.value))
                       }
                       className="bg-gray-800 border-gray-700 text-white"
                     />
