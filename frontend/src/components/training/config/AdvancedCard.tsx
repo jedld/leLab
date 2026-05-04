@@ -63,7 +63,7 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                   value={config.policy_device || 'cuda'}
                   onValueChange={(value) => updateConfig('policy_device', value)}
                 >
-                  <SelectTrigger className="bg-slate-900 border-slate-600 text-white rounded-lg">
+                  <SelectTrigger id="policy_device" className="bg-slate-900 border-slate-600 text-white rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-600">
@@ -117,7 +117,10 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                   id="num_workers"
                   type="number"
                   value={config.num_workers}
-                  onChange={(e) => updateConfig('num_workers', parseInt(e.target.value))}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v)) updateConfig('num_workers', v);
+                  }}
                   className="bg-slate-900 border-slate-600 text-white rounded-lg"
                 />
               </div>
@@ -137,7 +140,7 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                 value={config.optimizer_type || 'adam'}
                 onValueChange={(value) => updateConfig('optimizer_type', value)}
               >
-                <SelectTrigger className="bg-slate-900 border-slate-600 text-white rounded-lg">
+                <SelectTrigger id="optimizer_type" className="bg-slate-900 border-slate-600 text-white rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="bg-slate-800 border-slate-600">
@@ -223,7 +226,10 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                   id="log_freq"
                   type="number"
                   value={config.log_freq}
-                  onChange={(e) => updateConfig('log_freq', parseInt(e.target.value))}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v)) updateConfig('log_freq', v);
+                  }}
                   className="bg-slate-900 border-slate-600 text-white rounded-lg"
                 />
               </div>
@@ -235,7 +241,10 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                   id="save_freq"
                   type="number"
                   value={config.save_freq}
-                  onChange={(e) => updateConfig('save_freq', parseInt(e.target.value))}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value);
+                    if (!isNaN(v)) updateConfig('save_freq', v);
+                  }}
                   className="bg-slate-900 border-slate-600 text-white rounded-lg"
                 />
               </div>
@@ -327,7 +336,7 @@ const AdvancedCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }) 
                     value={config.wandb_mode || 'online'}
                     onValueChange={(value) => updateConfig('wandb_mode', value)}
                   >
-                    <SelectTrigger className="bg-slate-900 border-slate-600 text-white rounded-lg">
+                    <SelectTrigger id="wandb_mode" className="bg-slate-900 border-slate-600 text-white rounded-lg">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="bg-slate-800 border-slate-600">

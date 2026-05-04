@@ -44,7 +44,7 @@ const EssentialsCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }
               value={config.policy_type}
               onValueChange={(value) => updateConfig('policy_type', value)}
             >
-              <SelectTrigger className="bg-slate-900 border-slate-600 text-white rounded-lg">
+              <SelectTrigger id="policy_type" className="bg-slate-900 border-slate-600 text-white rounded-lg">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-600">
@@ -69,7 +69,10 @@ const EssentialsCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }
               id="steps"
               type="number"
               value={config.steps}
-              onChange={(e) => updateConfig('steps', parseInt(e.target.value))}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!isNaN(v)) updateConfig('steps', v);
+              }}
               className="bg-slate-900 border-slate-600 text-white rounded-lg"
             />
           </div>
@@ -82,7 +85,10 @@ const EssentialsCard: React.FC<ConfigComponentProps> = ({ config, updateConfig }
               id="batch_size"
               type="number"
               value={config.batch_size}
-              onChange={(e) => updateConfig('batch_size', parseInt(e.target.value))}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                if (!isNaN(v)) updateConfig('batch_size', v);
+              }}
               className="bg-slate-900 border-slate-600 text-white rounded-lg"
             />
           </div>
