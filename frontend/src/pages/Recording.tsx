@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -149,6 +149,28 @@ const Recording = () => {
     optimisticPhase,
   ]);
 
+  useEffect(() => {
+    if (!recordingSessionStarted || !backendStatus) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        handleExitEarly();
+      } else if (e.key === "r" || e.key === "R") {
+        handleRerecordEpisode();
+      } else if (e.key === "Escape") {
+        handleStopRecording();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [recordingSessionStarted, backendStatus, handleExitEarly, handleRerecordEpisode, handleStopRecording]);
+
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -190,7 +212,7 @@ const Recording = () => {
     }
   };
 
-  const handleExitEarly = async () => {
+  const handleExitEarly = useCallback(async () => {
     if (!backendStatus?.available_controls.exit_early) return;
 
     const realPhase = backendStatus.current_phase as Phase;
@@ -224,9 +246,9 @@ const Recording = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [backendStatus, baseUrl, fetchWithHeaders, toast]);
 
-  const handleRerecordEpisode = async () => {
+  const handleRerecordEpisode = useCallback(async () => {
     if (!backendStatus?.available_controls.rerecord_episode) return;
 
     try {
@@ -257,11 +279,11 @@ const Recording = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [backendStatus, baseUrl, fetchWithHeaders, toast]);
 
-  const handleStopRecording = async () => {
+  const handleStopRecording = useCallback(async () => {
     try {
-      const response = await fetchWithHeaders(`${baseUrl}/stop-recording`, {
+      await fetchWithHeaders(`${baseUrl}/stop-recording`, {
         method: "POST",
       });
 
@@ -270,7 +292,6 @@ const Recording = () => {
         description: "Recording session has been stopped.",
       });
 
-      // Navigate to upload window with current dataset info
       const datasetInfo = {
         dataset_repo_id:
           backendStatus?.dataset_repo_id || recordingConfig.dataset_repo_id,
@@ -288,7 +309,7 @@ const Recording = () => {
         variant: "destructive",
       });
     }
-  };
+  }, [backendStatus, baseUrl, fetchWithHeaders, toast, recordingConfig, navigate]);
 
   if (!recordingConfig) {
     return (
@@ -444,6 +465,7 @@ const Recording = () => {
           >
             <PrimaryIcon className="w-5 h-5 mr-2" />
             {primaryLabel}
+            <span className="ml-3 px-2 py-0.5 rounded text-xs font-mono bg-black/30 text-white/70">SPACE</span>
           </Button>
 
           {currentPhase === "completed" && (
