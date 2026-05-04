@@ -55,15 +55,6 @@ const RobotTile: React.FC<RobotTileProps> = ({
             onCreateNew={onCreateNew}
             isLoading={isLoading}
           />
-          {status && (
-            <p
-              className={`text-xs mt-2 ${
-                robot!.is_clean ? "text-green-400" : "text-amber-400"
-              }`}
-            >
-              {status}
-            </p>
-          )}
         </div>
         {robot && (
           <div className="flex items-center gap-1">
@@ -98,6 +89,16 @@ const RobotTile: React.FC<RobotTileProps> = ({
           </div>
         )}
       </div>
+
+      {status && (
+        <p
+          className={`text-xs text-center ${
+            robot!.is_clean ? "text-green-400" : "text-amber-400"
+          }`}
+        >
+          {status}
+        </p>
+      )}
 
       {robot && (
         <Tooltip>
