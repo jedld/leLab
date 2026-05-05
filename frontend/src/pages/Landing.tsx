@@ -86,7 +86,6 @@ const Landing = () => {
   };
 
   const handleTrainingClick = () => navigate("/training");
-  const handleInferenceClick = () => navigate("/inference");
 
   const openDatasetInViewer = (repoId: string) => {
     const found = datasets.find((d) => d.repo_id === repoId);
@@ -223,13 +222,6 @@ const Landing = () => {
       description: "Train a model on your datasets.",
       handler: handleTrainingClick,
       color: "bg-green-500 hover:bg-green-600",
-    },
-    {
-      title: "Inference",
-      description: "Run a trained model on the robot arm.",
-      handler: handleInferenceClick,
-      color: "bg-blue-500 hover:bg-blue-600",
-      isWorkInProgress: true,
     },
   ];
 
