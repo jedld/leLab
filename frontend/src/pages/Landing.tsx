@@ -196,7 +196,6 @@ const Landing = () => {
       description: "Train a model on your datasets.",
       handler: handleTrainingClick,
       color: "bg-green-500 hover:bg-green-600",
-      isWorkInProgress: true,
     },
     {
       title: "Inference",
