@@ -256,6 +256,35 @@ const InferenceModal: React.FC<Props> = ({
     };
   }, [open, baseUrl, fetchWithHeaders, jobId, selectedStep]);
 
+  // If the selected robot has cameras whose names match a policy-expected
+  // camera, auto-bind them. Prefer matching by browser device_id (stable
+  // across cv2 index drift); fall back to the saved camera_index.
+  useEffect(() => {
+    if (!policyConfig) return;
+    const robotCams = robot?.cameras ?? [];
+    if (robotCams.length === 0 || availableCameras.length === 0) return;
+    setCameraBindings((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const policyName of Object.keys(policyConfig.image_features)) {
+        if (next[policyName] != null) continue;
+        const robotCam = robotCams.find(
+          (c) => c.name.toLowerCase() === policyName.toLowerCase(),
+        );
+        if (!robotCam) continue;
+        const live =
+          (robotCam.device_id &&
+            availableCameras.find((c) => c.deviceId === robotCam.device_id)) ||
+          availableCameras.find((c) => c.index === robotCam.camera_index);
+        if (live) {
+          next[policyName] = live.index;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [policyConfig, robot, availableCameras]);
+
   const selectedRef =
     selectedStep != null
       ? checkpoints.find((c) => c.step === selectedStep)?.ref ?? null
