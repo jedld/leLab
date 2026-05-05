@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 LEROBOT_IMAGE = "huggingface/lerobot-gpu:latest"
 
+# HF Jobs' platform default timeout has killed legitimate runs that pushed
+# the model successfully but were still uploading auxiliary files. 2h covers
+# our typical ACT/SmolVLA runs on t4-small with comfortable headroom.
+HF_JOB_TIMEOUT = "2h"
+
 
 class HfCloudJobRunner:
     """Run a training as an HF Jobs job. Single-shot — instantiate per job."""
@@ -45,6 +50,9 @@ class HfCloudJobRunner:
         self._log_file = None  # type: ignore[assignment]
         # Cached terminal status once the job ends; None while live.
         self._terminal_status: Optional[str] = None
+        # Status.message at the terminal tick (e.g. "Job timeout"), so the
+        # registry can surface it to the UI instead of a synthetic exit code.
+        self._terminal_message: Optional[str] = None
 
     def start(self, job_id: str, config: TrainingRequest, output_dir: str) -> None:
         if self._hf_job_id is not None:
@@ -83,6 +91,7 @@ class HfCloudJobRunner:
             command=argv,
             flavor=self._flavor,
             secrets={"HF_TOKEN": token},
+            timeout=HF_JOB_TIMEOUT,
         )
         self._hf_job_id = job.id
         self._hf_job_url = getattr(job, "url", None)
@@ -193,6 +202,9 @@ class HfCloudJobRunner:
         terminal = {"COMPLETED", "CANCELED", "CANCELLED", "ERROR", "FAILED", "DELETED"}
         if stage_str in terminal:
             self._terminal_status = stage_str
+            message = getattr(status_obj, "message", None)
+            if message:
+                self._terminal_message = str(message)
             return False
         return True
 
@@ -220,3 +232,12 @@ class HfCloudJobRunner:
 
     def hf_job_url(self) -> Optional[str]:
         return self._hf_job_url
+
+    def terminal_message(self) -> Optional[str]:
+        """Status.message captured when the job reached a terminal stage.
+
+        Set by the most recent is_running() call that observed a terminal
+        stage. Used by the registry watchdog to surface platform reasons
+        like 'Job timeout' rather than a synthetic 'exit code 1'.
+        """
+        return self._terminal_message
