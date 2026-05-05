@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor
@@ -10,6 +11,25 @@ from lerobot.robots.so_follower import SO101FollowerConfig, SO101Follower
 from .config import setup_calibration_files
 
 logger = logging.getLogger(__name__)
+
+# sts3215 motor resolution; lerobot's _normalize uses (resolution - 1).
+_STS3215_MAX_RES = 4095
+
+# SO-101 URDF (so101_new_calib.urdf) is authored with the all-zeros pose at the
+# arm's sleep position, not the "middle of range" pose where calibration's
+# set_half_turn_homings is performed. To make the URDF track the real arm:
+#   URDF_value = sign * (motor_normalized_deg - motor_at_urdf_zero_deg)
+# where motor_at_urdf_zero_deg = (urdf_zero_ticks - mid) * 360 / max_res, and
+# `urdf_zero_ticks` is the raw Present_Position when the robot is at sleep.
+# That tick value is a property of the SO-101 mechanics + URDF design, so it's
+# constant across calibrations as long as the user pressed ENTER at the "middle
+# of range" pose during set_half_turn_homings.
+# Joints not listed here use lerobot's default convention (URDF = motor).
+_SO101_URDF_CORRECTIONS = {
+    # motor_name: (sign, urdf_zero_present_position_ticks)
+    "shoulder_lift": (+1, 3252),
+    "elbow_flex":    (+1, 1029),
+}
 
 # Global variables for teleoperation state
 teleoperation_active = False
@@ -35,47 +55,54 @@ def get_joint_positions_from_robot(robot) -> Dict[str, float]:
     Returns:
         Dictionary mapping URDF joint names to radian values
     """
+    motor_to_urdf_mapping = {
+        "shoulder_pan": "Rotation",
+        "shoulder_lift": "Pitch",
+        "elbow_flex": "Elbow",
+        "wrist_flex": "Wrist_Pitch",
+        "wrist_roll": "Wrist_Roll",
+        "gripper": "Jaw",
+    }
+
     try:
-        # Get the current observation from the robot
         observation = robot.get_observation()
+        calibration = robot.calibration or {}
 
-        # Map robot motor names to URDF joint names
-        # Based on the motor configuration in SO101Follower and URDF joint names
-        motor_to_urdf_mapping = {
-            "shoulder_pan": "Rotation",  # Base rotation
-            "shoulder_lift": "Pitch",  # Shoulder pitch
-            "elbow_flex": "Elbow",  # Elbow flexion
-            "wrist_flex": "Wrist_Pitch",  # Wrist pitch
-            "wrist_roll": "Wrist_Roll",  # Wrist roll
-            "gripper": "Jaw",  # Gripper/jaw
-        }
-
-        joint_positions = {}
-
-        # Extract joint positions and convert degrees to radians
+        joint_positions: Dict[str, float] = {}
+        debug_rows = []
         for motor_name, urdf_joint_name in motor_to_urdf_mapping.items():
             motor_key = f"{motor_name}.pos"
-            if motor_key in observation:
-                # Convert degrees to radians for the URDF viewer
-                angle_degrees = observation[motor_key]
-                angle_radians = angle_degrees * (3.14159 / 180.0)
-                joint_positions[urdf_joint_name] = angle_radians
-            else:
+            if motor_key not in observation:
                 logger.warning(f"Motor {motor_key} not found in observation")
                 joint_positions[urdf_joint_name] = 0.0
+                continue
+
+            raw_deg = observation[motor_key]
+            angle_degrees = raw_deg
+            correction = _SO101_URDF_CORRECTIONS.get(motor_name)
+            if correction is not None and motor_name in calibration:
+                sign, urdf_zero_ticks = correction
+                cal = calibration[motor_name]
+                mid = (cal.range_min + cal.range_max) / 2
+                motor_at_urdf_zero = (urdf_zero_ticks - mid) * 360 / _STS3215_MAX_RES
+                angle_degrees = sign * (raw_deg - motor_at_urdf_zero)
+
+            joint_positions[urdf_joint_name] = angle_degrees * math.pi / 180.0
+            debug_rows.append(
+                f"{motor_name:14s} raw={raw_deg:+8.2f}° → {urdf_joint_name:11s} = {angle_degrees:+8.2f}°"
+            )
+
+        # Throttled debug print (~once per second at 20 Hz broadcast).
+        now = time.time()
+        if now - getattr(get_joint_positions_from_robot, "_last_log", 0) > 1.0:
+            get_joint_positions_from_robot._last_log = now
+            logger.info("[joint-debug]\n  " + "\n  ".join(debug_rows))
 
         return joint_positions
 
     except Exception as e:
         logger.error(f"Error getting joint positions: {e}")
-        return {
-            "Rotation": 0.0,
-            "Pitch": 0.0,
-            "Elbow": 0.0,
-            "Wrist_Pitch": 0.0,
-            "Wrist_Roll": 0.0,
-            "Jaw": 0.0,
-        }
+        return {urdf_name: 0.0 for urdf_name in motor_to_urdf_mapping.values()}
 
 
 
