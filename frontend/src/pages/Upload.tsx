@@ -16,8 +16,20 @@ import {
   CheckCircle,
   AlertCircle,
   Loader2,
+  Trash2,
 } from "lucide-react";
 import { useApi } from "@/contexts/ApiContext";
+import { DatasetSource } from "@/lib/replayApi";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface DatasetInfo {
   dataset_repo_id: string;
@@ -28,6 +40,7 @@ interface DatasetInfo {
   fps?: number;
   total_frames?: number;
   robot_type?: string;
+  source?: DatasetSource;
 }
 
 interface UploadConfig {
@@ -57,6 +70,8 @@ const Upload = () => {
   const [tagsInput, setTagsInput] = useState(uploadConfig.tags.join(", "));
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Load actual dataset information from backend
   React.useEffect(() => {
@@ -88,6 +103,7 @@ const Upload = () => {
             saved_episodes: data.num_episodes, // Use actual episodes from dataset
             session_elapsed_seconds:
               initialDatasetInfo.session_elapsed_seconds || 0,
+            source: initialDatasetInfo.source,
           });
         } else {
           // Fallback to initial dataset info if backend fails
@@ -115,6 +131,15 @@ const Upload = () => {
 
     loadDatasetInfo();
   }, [initialDatasetInfo, navigate, toast]);
+
+  const openInHubViewer = (repoId: string) => {
+    const spacePath = `/spaces/lerobot/visualize_dataset?path=${encodeURIComponent(`/${repoId}`)}`;
+    // The user owns/manages the dataset (it appears under their hub
+    // listing), so login-redirect always works whether public or
+    // private. Avoids passing `private` through navigation state.
+    const target = `https://huggingface.co/login?next=${encodeURIComponent(spacePath)}`;
+    window.open(target, "_blank", "noopener,noreferrer");
+  };
 
   const formatDuration = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
@@ -200,6 +225,40 @@ const Upload = () => {
     navigate("/");
   };
 
+  const handleDeleteDataset = async () => {
+    if (!datasetInfo) return;
+    setIsDeleting(true);
+    try {
+      const response = await fetchWithHeaders(`${baseUrl}/delete-dataset`, {
+        method: "POST",
+        body: JSON.stringify({ dataset_repo_id: datasetInfo.dataset_repo_id }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        toast({
+          title: "Dataset Deleted",
+          description: `${datasetInfo.dataset_repo_id} has been removed from disk.`,
+        });
+        navigate("/");
+      } else {
+        toast({
+          title: "Delete Failed",
+          description: data.message || "Could not delete the dataset.",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Connection Error",
+        description: "Could not connect to the backend server.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   // Show loading state while fetching dataset info
   if (isLoadingDatasetInfo || !datasetInfo) {
     return (
@@ -212,19 +271,33 @@ const Upload = () => {
     );
   }
 
+  const isAlreadyOnHub = datasetInfo.source === "both";
+
   return (
     <div className="min-h-screen bg-black text-white p-8">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
-          <Button
-            onClick={() => navigate("/")}
-            variant="outline"
-            className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white"
-          >
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Home
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => navigate("/")}
+              variant="outline"
+              className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to Home
+            </Button>
+            <Button
+              onClick={() => setShowDeleteConfirm(true)}
+              variant="outline"
+              size="icon"
+              disabled={isDeleting}
+              aria-label="Delete dataset from disk"
+              className="border-red-500/40 text-red-400 hover:border-red-400 hover:text-red-300 hover:bg-red-500/10"
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
 
           <div className="flex items-center gap-3">
             {uploadSuccess ? (
@@ -330,122 +403,161 @@ const Upload = () => {
             </div>
 
             {/* Upload Configuration */}
-            <div className="bg-gray-900 rounded-lg p-6 border border-gray-700 mb-8">
-              <h2 className="text-xl font-semibold text-white mb-6">
-                Upload Configuration
-              </h2>
+            {!isAlreadyOnHub && (
+              <div className="bg-gray-900 rounded-lg p-6 border border-gray-700 mb-8">
+                <h2 className="text-xl font-semibold text-white mb-6">
+                  Upload Configuration
+                </h2>
 
-              <div className="space-y-6">
-                {/* Tags */}
-                <div>
-                  <Label htmlFor="tags" className="text-gray-300 mb-2 block">
-                    Tags (comma-separated)
-                  </Label>
-                  <Input
-                    id="tags"
-                    value={tagsInput}
-                    onChange={(e) => setTagsInput(e.target.value)}
-                    placeholder="robotics, lerobot, manipulation"
-                    className="bg-gray-800 border-gray-600 text-white"
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    Tags help others discover your dataset on HuggingFace Hub
+                <div className="space-y-6">
+                  {/* Tags */}
+                  <div>
+                    <Label htmlFor="tags" className="text-gray-300 mb-2 block">
+                      Tags (comma-separated)
+                    </Label>
+                    <Input
+                      id="tags"
+                      value={tagsInput}
+                      onChange={(e) => setTagsInput(e.target.value)}
+                      placeholder="robotics, lerobot, manipulation"
+                      className="bg-gray-800 border-gray-600 text-white"
+                    />
+                    <p className="text-sm text-gray-500 mt-1">
+                      Tags help others discover your dataset on HuggingFace Hub
+                    </p>
+                  </div>
+
+                  {/* Privacy Setting */}
+                  <div className="flex items-center space-x-3">
+                    <Checkbox
+                      id="private"
+                      checked={uploadConfig.private}
+                      onCheckedChange={(checked) =>
+                        setUploadConfig({
+                          ...uploadConfig,
+                          private: checked as boolean,
+                        })
+                      }
+                    />
+                    <div className="flex items-center gap-2">
+                      {uploadConfig.private ? (
+                        <EyeOff className="w-4 h-4 text-gray-400" />
+                      ) : (
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      )}
+                      <Label htmlFor="private" className="text-gray-300">
+                        Make dataset private
+                      </Label>
+                    </div>
+                  </div>
+                  <p className="text-sm text-gray-500 ml-6">
+                    {uploadConfig.private
+                      ? "Only you will be able to access this dataset"
+                      : "Dataset will be publicly accessible on HuggingFace Hub"}
                   </p>
                 </div>
-
-                {/* Privacy Setting */}
-                <div className="flex items-center space-x-3">
-                  <Checkbox
-                    id="private"
-                    checked={uploadConfig.private}
-                    onCheckedChange={(checked) =>
-                      setUploadConfig({
-                        ...uploadConfig,
-                        private: checked as boolean,
-                      })
-                    }
-                  />
-                  <div className="flex items-center gap-2">
-                    {uploadConfig.private ? (
-                      <EyeOff className="w-4 h-4 text-gray-400" />
-                    ) : (
-                      <Eye className="w-4 h-4 text-gray-400" />
-                    )}
-                    <Label htmlFor="private" className="text-gray-300">
-                      Make dataset private
-                    </Label>
-                  </div>
-                </div>
-                <p className="text-sm text-gray-500 ml-6">
-                  {uploadConfig.private
-                    ? "Only you will be able to access this dataset"
-                    : "Dataset will be publicly accessible on HuggingFace Hub"}
-                </p>
               </div>
-            </div>
+            )}
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button
-                onClick={handleUploadToHub}
-                disabled={isUploading}
-                className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 text-lg"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                    Uploading to Hub...
-                  </>
-                ) : (
-                  <>
-                    <UploadIcon className="w-5 h-5 mr-2" />
-                    Upload to HuggingFace Hub
-                  </>
-                )}
-              </Button>
+              {isAlreadyOnHub ? (
+                <Button
+                  onClick={() => openInHubViewer(datasetInfo.dataset_repo_id)}
+                  className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 text-lg"
+                >
+                  <ExternalLink className="w-5 h-5 mr-2" />
+                  View on Hugging Face Hub
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={handleUploadToHub}
+                    disabled={isUploading}
+                    className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-4 px-8 text-lg"
+                  >
+                    {isUploading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Uploading to Hub...
+                      </>
+                    ) : (
+                      <>
+                        <UploadIcon className="w-5 h-5 mr-2" />
+                        Upload to HuggingFace Hub
+                      </>
+                    )}
+                  </Button>
 
-              <Button
-                onClick={handleSkipUpload}
-                disabled={isUploading}
-                variant="outline"
-                className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white py-4 px-8 text-lg"
-              >
-                Skip Upload
-              </Button>
+                  <Button
+                    onClick={handleSkipUpload}
+                    disabled={isUploading}
+                    variant="outline"
+                    className="border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white py-4 px-8 text-lg"
+                  >
+                    Skip Upload
+                  </Button>
+                </>
+              )}
             </div>
 
             {/* Info Box */}
-            <div className="mt-8 p-4 bg-blue-900/20 border border-blue-600 rounded-lg">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-blue-400 mb-2">
-                    About HuggingFace Hub Upload
-                  </h3>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>
-                      • Your dataset will be uploaded to HuggingFace Hub for
-                      sharing and collaboration
-                    </li>
-                    <li>
-                      • You need to be logged in to HuggingFace CLI on the
-                      server
-                    </li>
-                    <li>
-                      • Uploaded datasets can be used for training models and
-                      sharing with the community
-                    </li>
-                    <li>
-                      • You can always upload manually later using the
-                      HuggingFace CLI
-                    </li>
-                  </ul>
+            {!isAlreadyOnHub && (
+              <div className="mt-8 p-4 bg-blue-900/20 border border-blue-600 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-400 mt-0.5" />
+                  <div>
+                    <h3 className="font-semibold text-blue-400 mb-2">
+                      About HuggingFace Hub Upload
+                    </h3>
+                    <ul className="text-sm text-gray-300 space-y-1">
+                      <li>
+                        • Your dataset will be uploaded to HuggingFace Hub for
+                        sharing and collaboration
+                      </li>
+                      <li>
+                        • You need to be logged in to HuggingFace CLI on the
+                        server
+                      </li>
+                      <li>
+                        • Uploaded datasets can be used for training models and
+                        sharing with the community
+                      </li>
+                      <li>
+                        • You can always upload manually later using the
+                        HuggingFace CLI
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </>
         )}
       </div>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent className="bg-gray-900 border-gray-700 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete dataset from disk?</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-400">
+              This permanently removes <span className="font-mono text-white">{datasetInfo.dataset_repo_id}</span> from your local cache. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-gray-800 border-gray-700 text-white hover:bg-gray-700">
+              Keep dataset
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteDataset}
+              disabled={isDeleting}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeleting ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

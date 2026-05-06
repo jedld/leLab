@@ -100,7 +100,12 @@ const Landing = () => {
   const handlePickExisting = (item: DatasetItem) => {
     if (item.source === "local" || item.source === "both") {
       navigate("/upload", {
-        state: { datasetInfo: { dataset_repo_id: item.repo_id } },
+        state: {
+          datasetInfo: {
+            dataset_repo_id: item.repo_id,
+            source: item.source,
+          },
+        },
       });
       return;
     }
