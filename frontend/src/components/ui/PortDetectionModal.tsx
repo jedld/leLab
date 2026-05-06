@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -7,7 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Loader2, Search, CheckCircle, AlertCircle } from "lucide-react";
+import { Loader2, CheckCircle, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/contexts/ApiContext";
 
@@ -18,96 +18,86 @@ interface PortDetectionModalProps {
   onPortDetected: (port: string) => void;
 }
 
+const SUCCESS_HOLD_MS = 2000;
+
 const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
   open,
   onOpenChange,
   robotType,
   onPortDetected,
 }) => {
-  const [step, setStep] = useState<
-    "instructions" | "detecting" | "success" | "error"
-  >("instructions");
+  const [step, setStep] = useState<"detecting" | "success" | "error">(
+    "detecting"
+  );
   const [detectedPort, setDetectedPort] = useState<string>("");
   const [error, setError] = useState<string>("");
-  const [portsBeforeDisconnect, setPortsBeforeDisconnect] = useState<string[]>(
-    []
-  );
+  const cancelledRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const successTimerRef = useRef<number | null>(null);
   const { toast } = useToast();
   const { baseUrl, fetchWithHeaders } = useApi();
 
-  const handleStartDetection = async () => {
+  const runDetection = async () => {
     try {
-      setStep("detecting");
-      setError("");
-
-      // Start port detection process
-      const response = await fetchWithHeaders(
+      abortRef.current = new AbortController();
+      const startResponse = await fetchWithHeaders(
         `${baseUrl}/start-port-detection`,
         {
           method: "POST",
-          body: JSON.stringify({
-            robot_type: robotType,
-          }),
+          body: JSON.stringify({ robot_type: robotType }),
+          signal: abortRef.current.signal,
         }
       );
-
-      const data = await response.json();
-
-      if (data.status === "success") {
-        setPortsBeforeDisconnect(data.data.ports_before);
-        // Backend polls for up to 15s waiting for the user to unplug —
-        // call immediately, the request stays open until a port disappears or timeout.
-        detectPortAfterDisconnect(data.data.ports_before);
-      } else {
-        throw new Error(data.message || "Failed to start port detection");
+      const startData = await startResponse.json();
+      if (cancelledRef.current) return;
+      if (startData.status !== "success") {
+        throw new Error(startData.message || "Failed to start port detection");
       }
-    } catch (error) {
-      console.error("Error starting port detection:", error);
-      setError(
-        `Error starting detection: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-      setStep("error");
-    }
-  };
+      const portsBefore: string[] = startData.data.ports_before;
 
-  const detectPortAfterDisconnect = async (portsBefore: string[]) => {
-    try {
-      const response = await fetchWithHeaders(
-        `${baseUrl}/detect-port-after-disconnect`,
-        {
-          method: "POST",
-          body: JSON.stringify({
-            ports_before: portsBefore,
-          }),
+      // Poll the backend in a loop. Each call waits up to 15s for an unplug;
+      // we silently retry on timeout so the user has unlimited time to read
+      // and act. The loop ends on success, abort, or a non-timeout failure.
+      while (!cancelledRef.current) {
+        abortRef.current = new AbortController();
+        const response = await fetchWithHeaders(
+          `${baseUrl}/detect-port-after-disconnect`,
+          {
+            method: "POST",
+            body: JSON.stringify({ ports_before: portsBefore }),
+            signal: abortRef.current.signal,
+          }
+        );
+        const data = await response.json();
+        if (cancelledRef.current) return;
+
+        if (data.status === "success") {
+          setDetectedPort(data.port);
+          await savePort(data.port);
+          if (cancelledRef.current) return;
+          setStep("success");
+          toast({
+            title: "Port Detected Successfully",
+            description: `${robotType} port detected: ${data.port}`,
+          });
+          successTimerRef.current = window.setTimeout(() => {
+            if (cancelledRef.current) return;
+            onPortDetected(data.port);
+            onOpenChange(false);
+          }, SUCCESS_HOLD_MS);
+          return;
         }
-      );
 
-      const data = await response.json();
-
-      if (data.status === "success") {
-        setDetectedPort(data.port);
-
-        // Save the port for future use
-        await savePort(data.port);
-
-        setStep("success");
-
-        toast({
-          title: "Port Detected Successfully",
-          description: `${robotType} port detected: ${data.port}`,
-        });
-      } else {
-        throw new Error(data.message || "Failed to detect port");
+        const message =
+          typeof data.message === "string" ? data.message : "";
+        if (message.includes("Timed out")) continue;
+        throw new Error(message || "Failed to detect port");
       }
-    } catch (error) {
-      console.error("Error detecting port:", error);
-      setError(
-        `Error detecting port: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+    } catch (e) {
+      if (cancelledRef.current) return;
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      console.error("Port detection failed:", e);
+      setError(e instanceof Error ? e.message : "Unknown error");
       setStep("error");
     }
   };
@@ -116,122 +106,67 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
     try {
       await fetchWithHeaders(`${baseUrl}/save-robot-port`, {
         method: "POST",
-        body: JSON.stringify({
-          robot_type: robotType,
-          port: port,
-        }),
+        body: JSON.stringify({ robot_type: robotType, port }),
       });
-    } catch (error) {
-      console.error("Error saving port:", error);
-      // Don't throw here, as the main detection was successful
+    } catch (e) {
+      console.error("Error saving port:", e);
     }
   };
 
-  const handleUsePort = () => {
-    onPortDetected(detectedPort);
-    onOpenChange(false);
-    resetModal();
-  };
-
-  const handleClose = () => {
-    onOpenChange(false);
-    resetModal();
-  };
-
-  const resetModal = () => {
-    setStep("instructions");
-    setDetectedPort("");
+  useEffect(() => {
+    if (!open) return;
+    cancelledRef.current = false;
+    setStep("detecting");
     setError("");
-    setPortsBeforeDisconnect([]);
+    setDetectedPort("");
+    runDetection();
+    return () => {
+      cancelledRef.current = true;
+      abortRef.current?.abort();
+      if (successTimerRef.current !== null) {
+        window.clearTimeout(successTimerRef.current);
+        successTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const handleCancel = () => {
+    onOpenChange(false);
+  };
+
+  const handleRetry = () => {
+    cancelledRef.current = false;
+    abortRef.current?.abort();
+    setStep("detecting");
+    setError("");
+    setDetectedPort("");
+    runDetection();
   };
 
   const renderStepContent = () => {
     switch (step) {
-      case "instructions":
-        return (
-          <div className="space-y-6">
-            <div className="text-center space-y-4">
-              <Search className="w-16 h-16 text-blue-500 mx-auto" />
-              <div className="space-y-2">
-                <h3 className="text-lg font-semibold text-white">
-                  Detect {robotType === "leader" ? "Leader" : "Follower"} Port
-                </h3>
-                <p className="text-gray-400">
-                  Follow these steps to automatically detect the robot port:
-                </p>
-              </div>
-            </div>
-
-            <div className="bg-gray-800 rounded-lg p-4 space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                  1
-                </div>
-                <p className="text-gray-300 text-sm">
-                  Make sure your {robotType} robot arm is currently connected
-                </p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                  2
-                </div>
-                <p className="text-gray-300 text-sm">
-                  Click "Start Detection" below
-                </p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                  3
-                </div>
-                <p className="text-gray-300 text-sm">
-                  When prompted,{" "}
-                  <strong>unplug the {robotType} robot arm</strong> from USB
-                </p>
-              </div>
-              <div className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                  4
-                </div>
-                <p className="text-gray-300 text-sm">
-                  The system will automatically detect which port was
-                  disconnected
-                </p>
-              </div>
-            </div>
-
-            <div className="flex gap-4 justify-center">
-              <Button
-                onClick={handleStartDetection}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-2"
-              >
-                Start Detection
-              </Button>
-              <Button
-                onClick={handleClose}
-                variant="outline"
-                className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white px-8 py-2"
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        );
-
       case "detecting":
         return (
           <div className="space-y-6 text-center">
             <Loader2 className="w-16 h-16 text-blue-500 mx-auto animate-spin" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-white">
-                Detecting Port...
+                Unplug the {robotType} arm
               </h3>
               <p className="text-gray-400">
-                Please <strong>unplug the {robotType} robot arm</strong> from
-                USB now
+                Disconnect the {robotType} robot arm from USB. The port will be
+                detected automatically.
               </p>
-              <p className="text-sm text-gray-500">
-                Detection will complete automatically in a few seconds
-              </p>
+            </div>
+            <div className="flex justify-center">
+              <Button
+                onClick={handleCancel}
+                variant="outline"
+                className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white px-8 py-2"
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         );
@@ -242,35 +177,11 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto" />
             <div className="space-y-2">
               <h3 className="text-lg font-semibold text-white">
-                Port Detected Successfully!
+                Port Detected
               </h3>
-              <p className="text-gray-400">
-                {robotType === "leader" ? "Leader" : "Follower"} port detected:
-              </p>
-              <p className="text-xl font-mono text-green-400 bg-gray-800 px-4 py-2 rounded">
+              <p className="text-xl font-mono text-green-400 bg-gray-800 px-4 py-2 rounded inline-block">
                 {detectedPort}
               </p>
-              <p className="text-sm text-gray-500">
-                This port has been saved as the default for future use.
-                <br />
-                You can now reconnect your robot arm.
-              </p>
-            </div>
-
-            <div className="flex gap-4 justify-center">
-              <Button
-                onClick={handleUsePort}
-                className="bg-green-500 hover:bg-green-600 text-white px-8 py-2"
-              >
-                Use This Port
-              </Button>
-              <Button
-                onClick={handleClose}
-                variant="outline"
-                className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white px-8 py-2"
-              >
-                Cancel
-              </Button>
             </div>
           </div>
         );
@@ -283,21 +194,19 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
               <h3 className="text-lg font-semibold text-white">
                 Detection Failed
               </h3>
-              <p className="text-gray-400">Unable to detect the robot port.</p>
               <div className="bg-red-900/20 border border-red-800 rounded-lg p-3">
                 <p className="text-red-400 text-sm">{error}</p>
               </div>
             </div>
-
             <div className="flex gap-4 justify-center">
               <Button
-                onClick={() => setStep("instructions")}
+                onClick={handleRetry}
                 className="bg-blue-500 hover:bg-blue-600 text-white px-8 py-2"
               >
                 Try Again
               </Button>
               <Button
-                onClick={handleClose}
+                onClick={handleCancel}
                 variant="outline"
                 className="border-gray-500 hover:border-gray-200 text-gray-300 hover:text-white px-8 py-2"
               >
@@ -320,7 +229,7 @@ const PortDetectionModal: React.FC<PortDetectionModalProps> = ({
             Port Detection
           </DialogTitle>
           <DialogDescription className="text-gray-400 text-center">
-            Automatically detect the USB port for your robot arm
+            Detect the USB port for your {robotType} arm
           </DialogDescription>
         </DialogHeader>
 
