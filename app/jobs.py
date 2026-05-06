@@ -66,6 +66,8 @@ class JobRecord(BaseModel):
     hf_flavor: Optional[str] = None
     hf_repo_id: Optional[str] = None
     hf_job_url: Optional[str] = None
+    # Captured from training stdout the first time wandb prints the run URL.
+    wandb_run_url: Optional[str] = None
     # Number of checkpoints currently visible (local: filesystem; cloud:
     # Hub repo). Filled in by JobRegistry.list/get; persisted as zero.
     checkpoint_count: int = 0
@@ -102,12 +104,22 @@ class JobRunner(Protocol):
     def is_running(self) -> bool: ...
     def returncode(self) -> Optional[int]: ...
     def stream_log_lines(self) -> List[LogLine]: ...
+    def wandb_run_url(self) -> Optional[str]: ...
 
 
 # tqdm progress: "Training:   1%|▏         | 125/10000 [02:02<2:36:10,  1.05step/s]"
 _TQDM_RE = re.compile(
     r"Training:\s*\d+%[^|]*\|[^|]*\|\s*(\d+)/(\d+)\s*\[(?:[\d:]+)<([\d:]+)"
 )
+
+# Wandb prints something like "wandb: 🚀 View run at https://wandb.ai/<entity>/<project>/runs/<id>"
+# when it boots. We capture the first URL of that shape we see.
+_WANDB_URL_RE = re.compile(r"https://wandb\.ai/[^\s/]+/[^\s/]+/runs/[A-Za-z0-9]+")
+
+
+def extract_wandb_run_url(line: str) -> Optional[str]:
+    match = _WANDB_URL_RE.search(line)
+    return match.group(0) if match else None
 
 
 def _parse_duration(s: str) -> Optional[float]:
@@ -188,6 +200,7 @@ class LocalJobRunner:
         self._stop_event = threading.Event()
         self._log_file_path = log_file_path
         self._log_file = None  # type: ignore[assignment]
+        self._wandb_run_url: Optional[str] = None
 
     def start(
         self,
@@ -270,6 +283,9 @@ class LocalJobRunner:
             pass
         return out
 
+    def wandb_run_url(self) -> Optional[str]:
+        return self._wandb_run_url
+
     # -- internals --
 
     def _pump_stdout(self) -> None:
@@ -282,6 +298,10 @@ class LocalJobRunner:
                 if not stripped:
                     continue
                 parse_metrics_into(stripped, self._metrics)
+                if self._wandb_run_url is None:
+                    url = extract_wandb_run_url(stripped)
+                    if url is not None:
+                        self._wandb_run_url = url
                 log_line = LogLine(timestamp=time.time(), message=stripped)
                 if self._log_file is not None:
                     try:
@@ -337,6 +357,7 @@ class TailingJobRunner:
         # Replay everything that's already on disk so the parser catches up
         # on metrics, then tail from the current EOF.
         self._tail_offset = 0
+        self._wandb_run_url: Optional[str] = None
 
     def start(self, job_id: str, config: TrainingRequest, output_dir: str) -> None:
         # Required by JobRunner Protocol but irrelevant here; the subprocess
@@ -383,6 +404,9 @@ class TailingJobRunner:
     def pid(self) -> Optional[int]:
         return self._pid
 
+    def wandb_run_url(self) -> Optional[str]:
+        return self._wandb_run_url
+
     # -- internals --
 
     def _tail_loop(self) -> None:
@@ -410,6 +434,10 @@ class TailingJobRunner:
                         except Exception:
                             continue
                         parse_metrics_into(log_line.message, self._metrics)
+                        if self._wandb_run_url is None:
+                            url = extract_wandb_run_url(log_line.message)
+                            if url is not None:
+                                self._wandb_run_url = url
                         if self._log_queue.qsize() >= 1000:
                             try:
                                 self._log_queue.get_nowait()
@@ -899,6 +927,13 @@ class JobRegistry:
             if runner is None or record is None:
                 continue
             if runner.is_running():
+                # Pull the wandb run URL once it appears in stdout.
+                if record.wandb_run_url is None:
+                    url = runner.wandb_run_url()
+                    if url is not None:
+                        with self._lock:
+                            record.wandb_run_url = url
+                        self._persist(record, force=True)
                 # Persist metric snapshot at most once per second.
                 self._persist(record, force=False)
                 continue
@@ -906,6 +941,8 @@ class JobRegistry:
             # Subprocess exited since the last tick. Finalise.
             rc = runner.returncode()
             with self._lock:
+                if record.wandb_run_url is None:
+                    record.wandb_run_url = runner.wandb_run_url()
                 record.state = "done" if rc == 0 else "failed"
                 record.ended_at = time.time()
                 record.exit_code = rc

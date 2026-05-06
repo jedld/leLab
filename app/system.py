@@ -14,12 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 # Cached at module load — never re-checked. After install, the user must
-# restart lelab for a freshly-installed accelerate to be importable.
+# restart lelab for a freshly-installed package to be importable.
 TRAINING_AVAILABLE: bool = importlib.util.find_spec("accelerate") is not None
 TRAINING_INSTALL_HINT: str = "pip install accelerate"
 
+WANDB_AVAILABLE: bool = importlib.util.find_spec("wandb") is not None
+WANDB_INSTALL_HINT: str = "pip install wandb"
 
-def _build_install_cmd() -> List[str]:
+
+def _build_install_cmd(package: str) -> List[str]:
     """Pick the best installer for the running Python.
 
     Venvs created with `uv venv` don't ship pip, so `python -m pip` fails with
@@ -28,11 +31,11 @@ def _build_install_cmd() -> List[str]:
     Otherwise fall back to `python -m pip`.
     """
     if shutil.which("uv"):
-        return ["uv", "pip", "install", "--python", sys.executable, "accelerate"]
-    return [sys.executable, "-m", "pip", "install", "accelerate"]
+        return ["uv", "pip", "install", "--python", sys.executable, package]
+    return [sys.executable, "-m", "pip", "install", package]
 
 
-class TrainingExtraStatus(BaseModel):
+class ExtraStatus(BaseModel):
     available: bool
     install_hint: str
 
@@ -49,7 +52,8 @@ class InstallStatusResponse(BaseModel):
 
 
 class InstallManager:
-    def __init__(self) -> None:
+    def __init__(self, package: str) -> None:
+        self.package = package
         self.state: str = "idle"
         self.error: Optional[str] = None
         self.process: Optional[subprocess.Popen] = None
@@ -68,7 +72,7 @@ class InstallManager:
 
         try:
             self.process = subprocess.Popen(
-                _build_install_cmd(),
+                _build_install_cmd(self.package),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
@@ -132,7 +136,8 @@ class InstallManager:
             pass
 
 
-install_manager = InstallManager()
+training_install_manager = InstallManager("accelerate")
+wandb_install_manager = InstallManager("wandb")
 
 
 def handle_get_training_extra() -> Dict[str, Any]:
@@ -140,8 +145,20 @@ def handle_get_training_extra() -> Dict[str, Any]:
 
 
 def handle_install_training_extra() -> Dict[str, Any]:
-    return install_manager.start()
+    return training_install_manager.start()
 
 
 def handle_install_training_extra_status() -> Dict[str, Any]:
-    return install_manager.get_status()
+    return training_install_manager.get_status()
+
+
+def handle_get_wandb_extra() -> Dict[str, Any]:
+    return {"available": WANDB_AVAILABLE, "install_hint": WANDB_INSTALL_HINT}
+
+
+def handle_install_wandb_extra() -> Dict[str, Any]:
+    return wandb_install_manager.start()
+
+
+def handle_install_wandb_extra_status() -> Dict[str, Any]:
+    return wandb_install_manager.get_status()

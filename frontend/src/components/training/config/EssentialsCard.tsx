@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,8 @@ import {
 import { ConfigComponentProps } from '../types';
 import DatasetCombobox from '@/components/replay/DatasetCombobox';
 import { DatasetItem } from '@/lib/replayApi';
+import WandbInstallDialog from '../WandbInstallDialog';
+import { useApi } from '@/contexts/ApiContext';
 
 interface EssentialsCardProps extends ConfigComponentProps {
   datasets: DatasetItem[];
@@ -20,6 +22,35 @@ interface EssentialsCardProps extends ConfigComponentProps {
 }
 
 const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, datasets, datasetsLoading }) => {
+  const { baseUrl, fetchWithHeaders } = useApi();
+  const [wandbDialogOpen, setWandbDialogOpen] = useState(false);
+  const [wandbInstallHint, setWandbInstallHint] = useState('pip install wandb');
+
+  const handleWandbToggle = async (checked: boolean) => {
+    if (!checked) {
+      updateConfig('wandb_enable', false);
+      return;
+    }
+    // Check availability before flipping the switch on. If wandb isn't
+    // importable in this lelab process, surface the same install flow used
+    // for the training extra (accelerate) instead of letting the user start
+    // a run that will fail.
+    try {
+      const r = await fetchWithHeaders(`${baseUrl}/system/wandb-extra`);
+      const data: { available: boolean; install_hint: string } = await r.json();
+      if (data.available) {
+        updateConfig('wandb_enable', true);
+      } else {
+        setWandbInstallHint(data.install_hint);
+        setWandbDialogOpen(true);
+      }
+    } catch {
+      // Backend unreachable — let the user proceed; training start will
+      // surface the real error if wandb is genuinely missing.
+      updateConfig('wandb_enable', true);
+    }
+  };
+
   return (
     <Card className="bg-slate-800/50 border-slate-700 rounded-xl">
       <CardHeader>
@@ -105,13 +136,19 @@ const EssentialsCard: React.FC<EssentialsCardProps> = ({ config, updateConfig, d
             <Switch
               id="wandb_enable"
               checked={config.wandb_enable}
-              onCheckedChange={(checked) => updateConfig('wandb_enable', checked)}
+              onCheckedChange={handleWandbToggle}
             />
             <Label htmlFor="wandb_enable" className="text-slate-300">
               Enable Weights & Biases
             </Label>
           </div>
         </div>
+
+        <WandbInstallDialog
+          open={wandbDialogOpen}
+          onOpenChange={setWandbDialogOpen}
+          installHint={wandbInstallHint}
+        />
 
         {config.wandb_enable && (
           <div>

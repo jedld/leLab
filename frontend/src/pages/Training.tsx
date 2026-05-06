@@ -518,6 +518,16 @@ const MonitoringMode: React.FC<{ jobId: string }> = ({ jobId }) => {
                     View on Hub ↗
                   </a>
                 )}
+                {job.wandb_run_url && (
+                  <a
+                    href={job.wandb_run_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-yellow-300 hover:text-yellow-200 underline"
+                  >
+                    View on W&B ↗
+                  </a>
+                )}
               </div>
               <p className="text-xs text-slate-400">
                 {job.state}

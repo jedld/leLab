@@ -8,6 +8,8 @@ parser since stdout format is identical to a local lerobot run.
 from __future__ import annotations
 
 import logging
+import netrc
+import os
 import threading
 import time
 from pathlib import Path
@@ -16,7 +18,7 @@ from typing import List, Optional
 
 from huggingface_hub import HfApi, get_token
 
-from ..jobs import LogLine, TrainingMetrics, parse_metrics_into
+from ..jobs import LogLine, TrainingMetrics, extract_wandb_run_url, parse_metrics_into
 from ..training import TrainingRequest, build_training_command
 
 logger = logging.getLogger(__name__)
@@ -60,6 +62,14 @@ if not output_dir or not repo_id:
     sys.exit(2)
 
 api = HfApi()
+# lerobot only calls push_to_hub at the end of training, so the repo doesn't
+# exist when our checkpoint watcher fires. Create it up front (idempotent).
+try:
+    api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
+    print(f"[wrapper] repo ready: {repo_id}", flush=True)
+except Exception as exc:
+    print(f"[wrapper] create_repo failed: {exc}", flush=True)
+
 seen = set()
 stop_event = threading.Event()
 
@@ -125,6 +135,27 @@ sys.exit(rc)
 HF_JOB_TIMEOUT = "2h"
 
 
+def resolve_wandb_api_key() -> Optional[str]:
+    """Look up the host's wandb API key for forwarding to a cloud job.
+
+    Checks WANDB_API_KEY first, then falls back to ~/.netrc (where
+    `wandb login` writes the key under machine api.wandb.ai). Returns None
+    if neither source has it; the caller decides how to surface that.
+    """
+    key = os.environ.get("WANDB_API_KEY")
+    if key:
+        return key
+    try:
+        rc = netrc.netrc()
+    except (FileNotFoundError, netrc.NetrcParseError, OSError):
+        return None
+    auth = rc.authenticators("api.wandb.ai")
+    if auth is None:
+        return None
+    _login, _account, password = auth
+    return password or None
+
+
 class HfCloudJobRunner:
     """Run a training as an HF Jobs job. Single-shot — instantiate per job."""
 
@@ -149,6 +180,7 @@ class HfCloudJobRunner:
         # Status.message at the terminal tick (e.g. "Job timeout"), so the
         # registry can surface it to the UI instead of a synthetic exit code.
         self._terminal_message: Optional[str] = None
+        self._wandb_run_url: Optional[str] = None
 
     def start(self, job_id: str, config: TrainingRequest, output_dir: str) -> None:
         if self._hf_job_id is not None:
@@ -187,11 +219,23 @@ class HfCloudJobRunner:
 
         # HF_TOKEN goes via `secrets` (not `env`) so it doesn't show up in
         # the job's environment variable inspection / logs.
+        secrets = {"HF_TOKEN": token}
+        if config.wandb_enable:
+            wandb_key = resolve_wandb_api_key()
+            if not wandb_key:
+                # ValueError so main.py maps it to a 400 + detail the UI shows.
+                raise ValueError(
+                    "WANDB_API_KEY not found on this machine. "
+                    "Run `wandb login` or export WANDB_API_KEY before launching "
+                    "cloud jobs with W&B enabled."
+                )
+            secrets["WANDB_API_KEY"] = wandb_key
+
         job = self._api.run_job(
             image=LEROBOT_IMAGE,
             command=wrapped_command,
             flavor=self._flavor,
-            secrets={"HF_TOKEN": token},
+            secrets=secrets,
             timeout=HF_JOB_TIMEOUT,
         )
         self._hf_job_id = job.id
@@ -238,6 +282,10 @@ class HfCloudJobRunner:
                         if not stripped:
                             continue
                         parse_metrics_into(stripped, self._metrics)
+                        if self._wandb_run_url is None:
+                            url = extract_wandb_run_url(stripped)
+                            if url is not None:
+                                self._wandb_run_url = url
                         log_line = LogLine(timestamp=time.time(), message=stripped)
                         if self._log_file is not None:
                             try:
@@ -333,6 +381,9 @@ class HfCloudJobRunner:
 
     def hf_job_url(self) -> Optional[str]:
         return self._hf_job_url
+
+    def wandb_run_url(self) -> Optional[str]:
+        return self._wandb_run_url
 
     def terminal_message(self) -> Optional[str]:
         """Status.message captured when the job reached a terminal stage.
