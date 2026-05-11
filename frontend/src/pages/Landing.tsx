@@ -4,6 +4,7 @@ import { ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import LandingTopBar from "@/components/landing/LandingTopBar";
+import Footer from "@/components/Footer";
 import RobotConfigManager from "@/components/landing/RobotConfigManager";
 import RecordingModal from "@/components/landing/RecordingModal";
 import DatasetPicker from "@/components/landing/DatasetPicker";
@@ -279,6 +280,8 @@ const Landing = () => {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <JobsSection />
       </main>
+
+      <Footer />
 
       <UsageInstructionsModal
         open={showUsageModal}
