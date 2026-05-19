@@ -174,3 +174,23 @@ def test_setup_calibration_files_copies_configs(
 # directory, so the function only validates that the file exists in LEADER_CONFIG_PATH /
 # FOLLOWER_CONFIG_PATH; it never writes into CALIBRATION_BASE_PATH_TELEOP or
 # CALIBRATION_BASE_PATH_ROBOTS. The plan's assertion about those paths was incorrect.
+
+
+def test_with_lelab_tag_appends_to_existing_tags() -> None:
+    from lelab.utils.config import LELAB_TAG, with_lelab_tag
+
+    assert with_lelab_tag(["robotics", "lerobot"]) == ["robotics", "lerobot", LELAB_TAG]
+
+
+def test_with_lelab_tag_handles_none_and_empty() -> None:
+    from lelab.utils.config import LELAB_TAG, with_lelab_tag
+
+    assert with_lelab_tag(None) == [LELAB_TAG]
+    assert with_lelab_tag([]) == [LELAB_TAG]
+
+
+def test_with_lelab_tag_dedupes() -> None:
+    from lelab.utils.config import LELAB_TAG, with_lelab_tag
+
+    # Caller-supplied LeLab is not duplicated, and order is preserved.
+    assert with_lelab_tag(["robotics", LELAB_TAG, "lerobot"]) == ["robotics", LELAB_TAG, "lerobot"]

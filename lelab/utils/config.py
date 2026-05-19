@@ -44,6 +44,18 @@ FOLLOWER_CONFIG_FILE = os.path.join(CONFIG_STORAGE_PATH, "follower_config.txt")
 # Robot config records (per-robot JSON metadata)
 ROBOTS_PATH = os.path.expanduser("~/.cache/huggingface/lerobot/robots")
 
+# Tag stamped on every dataset pushed to the Hub from LeLab, so we can later
+# query the Hub for LeLab-produced datasets and compute usage metrics.
+LELAB_TAG = "LeLab"
+
+
+def with_lelab_tag(tags: list[str] | None) -> list[str]:
+    """Return `tags` with LELAB_TAG appended (deduped, order preserved)."""
+    out = list(tags or [])
+    if LELAB_TAG not in out:
+        out.append(LELAB_TAG)
+    return out
+
 
 def _atomic_write_text(path: str, content: str) -> None:
     """Write to <path>.tmp then os.replace, so a crash mid-write never leaves

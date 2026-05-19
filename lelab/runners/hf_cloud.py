@@ -35,6 +35,7 @@ from huggingface_hub.errors import RepositoryNotFoundError
 
 from ..jobs import LogLine, TrainingMetrics, extract_wandb_run_url, parse_metrics_into
 from ..train import TrainingRequest, build_training_command
+from ..utils.config import with_lelab_tag
 from ..utils.hf_auth import cached_whoami, shared_hf_api
 
 logger = logging.getLogger(__name__)
@@ -362,7 +363,7 @@ class HfCloudJobRunner:
         from lerobot.datasets import LeRobotDataset
 
         try:
-            LeRobotDataset(repo_id).push_to_hub(tags=[], private=False)
+            LeRobotDataset(repo_id).push_to_hub(tags=with_lelab_tag(None), private=False)
         except Exception as exc:
             msg = f"Failed to upload local dataset {repo_id} to Hub: {exc}"
             self._log_line(f"[upload] {msg}")
