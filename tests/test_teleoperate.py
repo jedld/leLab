@@ -92,6 +92,36 @@ def test_gripper_feedback_targets_scales_with_gain() -> None:
     assert high_gain_torque > low_gain_torque
 
 
+def test_handle_teleoperation_capabilities_reports_so_family() -> None:
+    from lelab.teleoperate import (
+        gripper_force_feedback_supported,
+        handle_teleoperation_capabilities,
+    )
+
+    caps = handle_teleoperation_capabilities()
+    assert caps["robot_family"] == "so_leader_follower"
+    assert caps["gripper_force_feedback"] is gripper_force_feedback_supported()
+
+
+def test_start_teleoperation_rejects_force_feedback_when_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import lelab.teleoperate as teleop
+
+    monkeypatch.setattr(teleop, "gripper_force_feedback_supported", lambda: False)
+
+    request = teleop.TeleoperateRequest(
+        leader_port="COM1",
+        follower_port="COM2",
+        leader_config="leader",
+        follower_config="follower",
+        gripper_force_feedback=True,
+    )
+    result = teleop.handle_start_teleoperation(request)
+    assert result["success"] is False
+    assert "SO-100" in result["message"]
+
+
 def test_handle_teleoperation_status_returns_dict() -> None:
     from lelab.teleoperate import handle_teleoperation_status
 

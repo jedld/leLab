@@ -4,6 +4,14 @@ Optional haptic feedback for SO-101 leader–follower teleoperation. When enable
 
 Arm joints stay back-drivable (torque off) at all times; only the leader gripper motor is powered when feedback is active.
 
+## Scope: LeRobot vs LeLab
+
+**[LeRobot](https://github.com/huggingface/lerobot)** supports many robot platforms (Koch, OMX, OpenArm, Unitree G1, Reachy, and more).
+
+**LeLab teleoperation** is currently implemented only for **SO leader/follower arms** (SO-100, SO-101, and SO-10X variants sharing the same `so_leader` / `so_follower` stack). Gripper force feedback is further limited to that family because it relies on STS3215 Feetech `Present_Load` sensing and the leader–follower gripper architecture.
+
+`GET /teleoperation-capabilities` reports whether gripper force feedback is available in this build. The landing-page checkbox is hidden when unsupported. `POST /move-arm` rejects `gripper_force_feedback: true` on unsupported hardware.
+
 ## Enabling in the UI
 
 1. On the **Landing** page, select a configured robot.
@@ -20,6 +28,12 @@ In dev mode, use the Vite UI at `http://localhost:8080` so you see the latest fr
 |-------|------|---------|-------------|
 | `gripper_force_feedback` | `bool` | `false` | Enable gripper-only force feedback |
 | `gripper_force_feedback_gain` | `float` | `1.0` | Resistance strength multiplier (0.1–3.0) |
+
+`GET /teleoperation-capabilities` returns:
+
+- `robot_family` — LeLab teleop stack id (currently `so_leader_follower`)
+- `robot_family_label` — human-readable hardware family
+- `gripper_force_feedback` — whether gripper haptics are supported
 
 `GET /teleoperation-status` includes:
 

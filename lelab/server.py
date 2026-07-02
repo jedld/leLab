@@ -75,6 +75,7 @@ from .teleoperate import (
     handle_get_joint_positions,
     handle_start_teleoperation,
     handle_stop_teleoperation,
+    handle_teleoperation_capabilities,
     handle_teleoperation_status,
 )
 
@@ -318,6 +319,12 @@ def stop_teleoperation():
 def teleoperation_status():
     """Get the current teleoperation status"""
     return handle_teleoperation_status()
+
+
+@app.get("/teleoperation-capabilities")
+def teleoperation_capabilities():
+    """Report teleoperation features supported by this LeLab build."""
+    return handle_teleoperation_capabilities()
 
 
 @app.get("/joint-positions")

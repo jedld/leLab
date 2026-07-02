@@ -4,6 +4,7 @@ import { useApi } from "@/contexts/ApiContext";
 import { useToast } from "@/hooks/use-toast";
 import { RobotRecord } from "@/hooks/useRobots";
 import RobotTile from "./RobotTile";
+import { useTeleoperationCapabilities } from "@/hooks/useTeleoperationCapabilities";
 
 interface RobotConfigManagerProps {
   selectedName: string | null;
@@ -27,6 +28,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
   const navigate = useNavigate();
   const { baseUrl, fetchWithHeaders } = useApi();
   const { toast } = useToast();
+  const { capabilities: teleopCapabilities } = useTeleoperationCapabilities();
 
   const handleConfigure = (name: string) => {
     navigate("/calibration", { state: { robot_name: name } });
@@ -80,6 +82,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
       selectedName={selectedName}
       availableNames={availableNames}
       isLoading={isLoading}
+      teleopCapabilities={teleopCapabilities}
       onSelect={selectRobot}
       onCreateNew={createRobot}
       onConfigure={handleConfigure}

@@ -28,6 +28,11 @@ from .utils.devices import safe_disconnect_device
 
 logger = logging.getLogger(__name__)
 
+# LeLab teleoperation is implemented for SO leader/follower arms only (SO-100/101/10X).
+# LeRobot itself supports many other robot platforms; this constant gates SO-specific
+# features until LeLab grows a per-robot hardware model.
+LELAB_TELEOP_ROBOT_FAMILY = "so_leader_follower"
+
 # sts3215 motor resolution; lerobot's _normalize uses (resolution - 1).
 _STS3215_MAX_RES = 4095
 
@@ -81,6 +86,21 @@ class TeleoperateRequest(BaseModel):
     follower_config: str
     gripper_force_feedback: bool = False
     gripper_force_feedback_gain: float = Field(default=1.0, ge=0.1, le=3.0)
+
+
+def gripper_force_feedback_supported() -> bool:
+    """Whether the current LeLab teleop stack supports gripper haptics."""
+    return LELAB_TELEOP_ROBOT_FAMILY == "so_leader_follower"
+
+
+def handle_teleoperation_capabilities() -> dict[str, Any]:
+    """Report which teleoperation features apply to LeLab's configured hardware."""
+    return {
+        "robot_family": LELAB_TELEOP_ROBOT_FAMILY,
+        "robot_family_label": "SO-100 / SO-101 leader–follower",
+        "gripper_force_feedback": gripper_force_feedback_supported(),
+        "message": "Teleoperation capabilities retrieved successfully",
+    }
 
 
 def get_joint_positions_from_robot(robot) -> dict[str, float]:
@@ -266,6 +286,15 @@ def handle_start_teleoperation(request: TeleoperateRequest, websocket_manager=No
         teleoperation_stop_reason
 
     from . import record as _record, rollout as _rollout
+
+    if request.gripper_force_feedback and not gripper_force_feedback_supported():
+        return {
+            "success": False,
+            "message": (
+                "Gripper force feedback is only available for SO-100 / SO-101 "
+                "leader–follower arms."
+            ),
+        }
 
     with _state_lock:
         if teleoperation_active:

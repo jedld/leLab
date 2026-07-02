@@ -29,6 +29,7 @@ REQUIRED_PATHS = {
     "/move-arm",
     "/stop-teleoperation",
     "/teleoperation-status",
+    "/teleoperation-capabilities",
     "/joint-positions",
     "/start-recording",
     "/stop-recording",
