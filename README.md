@@ -34,7 +34,7 @@ A page will automatically open in your browser and you are ready to go.
     </tr>
     <tr>
       <td>🕹️ <b>Teleoperate</b></td>
-      <td>Move the leader, the follower mirrors it. Live joint streaming.</td>
+      <td>Move the leader, the follower mirrors it. Live joint streaming. Optional <a href="GRIPPER_FORCE_FEEDBACK.md">gripper force feedback</a> when grasping objects.</td>
     </tr>
     <tr>
       <td>📹 <b>Record</b></td>

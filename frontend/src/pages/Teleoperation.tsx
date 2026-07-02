@@ -5,6 +5,8 @@ import TeleopCameraPanel from "@/components/control/TeleopCameraPanel";
 import { useToast } from "@/hooks/use-toast";
 import { useApi } from "@/contexts/ApiContext";
 
+const STATUS_POLL_MS = 2000;
+
 const TeleoperationPage = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -42,8 +44,11 @@ const TeleoperationPage = () => {
   //     and stashes a flag the next page reads to confirm the clean disconnect.
   //     It uses a bare fetch (no JSON Content-Type) so the request stays a CORS
   //     "simple request" and isn't dropped to a preflight mid-unload.
+  //   - pagehide with `persisted` (bfcache) is ignored so backgrounding the
+  //     tab does not kill an active session.
   useEffect(() => {
-    const handlePageHide = () => {
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted) return;
       try {
         sessionStorage.setItem("lelab:teleop-stopped", "1");
       } catch {
@@ -61,6 +66,41 @@ const TeleoperationPage = () => {
       stopTeleoperation();
     };
   }, [baseUrl, stopTeleoperation]);
+
+  // If the backend worker dies (serial glitch, unplug, etc.) while this page
+  // is still open, surface it instead of leaving the user moving a dead leader.
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetchWithHeaders(`${baseUrl}/teleoperation-status`);
+        const data = await res.json();
+        if (cancelled || stoppedRef.current) return;
+        if (data?.teleoperation_active) return;
+
+        stoppedRef.current = true;
+        const reason =
+          typeof data?.stop_reason === "string" && data.stop_reason
+            ? data.stop_reason
+            : "The teleoperation session ended unexpectedly.";
+        toast({
+          title: "Teleoperation ended",
+          description: reason,
+          variant: "destructive",
+        });
+        navigate("/");
+      } catch {
+        /* best-effort; keep polling */
+      }
+    };
+
+    const interval = setInterval(pollStatus, STATUS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [baseUrl, fetchWithHeaders, navigate, toast]);
 
   const handleGoBack = async () => {
     await stopTeleoperation();

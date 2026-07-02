@@ -32,7 +32,10 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
     navigate("/calibration", { state: { robot_name: name } });
   };
 
-  const handleTeleop = async (robot: RobotRecord) => {
+  const handleTeleop = async (
+    robot: RobotRecord,
+    options: { gripperForceFeedback: boolean },
+  ) => {
     try {
       const res = await fetchWithHeaders(`${baseUrl}/move-arm`, {
         method: "POST",
@@ -42,6 +45,7 @@ const RobotConfigManager: React.FC<RobotConfigManagerProps> = ({
           follower_port: robot.follower_port,
           leader_config: robot.leader_config,
           follower_config: robot.follower_config,
+          gripper_force_feedback: options.gripperForceFeedback,
         }),
       });
       const data = await res.json();

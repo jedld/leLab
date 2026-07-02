@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { Settings, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Tooltip,
   TooltipContent,
@@ -25,7 +27,7 @@ interface RobotTileProps {
   onSelect: (name: string) => void;
   onCreateNew: (name: string) => Promise<boolean>;
   onConfigure: (name: string) => void;
-  onTeleop: (robot: RobotRecord) => void;
+  onTeleop: (robot: RobotRecord, options: { gripperForceFeedback: boolean }) => void;
   onDelete: (name: string) => void;
 }
 
@@ -41,6 +43,7 @@ const RobotTile: React.FC<RobotTileProps> = ({
   onDelete,
 }) => {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [gripperForceFeedback, setGripperForceFeedback] = useState(false);
   const status = robot ? (robot.is_clean ? "Ready" : "Needs configuration") : null;
   const teleopDisabled = !robot || !robot.is_clean;
 
@@ -100,26 +103,51 @@ const RobotTile: React.FC<RobotTileProps> = ({
       </div>
 
       {robot && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div className="w-full">
-              <Button
-                onClick={() => onTeleop(robot)}
-                disabled={teleopDisabled}
-                className={`w-full ${
-                  teleopDisabled
-                    ? "bg-red-500/30 hover:bg-red-500/30 text-red-200 cursor-not-allowed"
-                    : "bg-yellow-500 hover:bg-yellow-600 text-white"
+        <>
+          <div className="flex items-start gap-3">
+            <Checkbox
+              id={`gripper-force-feedback-${robot.name}`}
+              checked={gripperForceFeedback}
+              onCheckedChange={(value) => setGripperForceFeedback(value === true)}
+              disabled={teleopDisabled}
+              className="mt-0.5 border-gray-500 data-[state=checked]:bg-yellow-500 data-[state=checked]:border-yellow-500"
+            />
+            <div className="space-y-1">
+              <Label
+                htmlFor={`gripper-force-feedback-${robot.name}`}
+                className={`text-sm font-medium cursor-pointer ${
+                  teleopDisabled ? "text-gray-500" : "text-gray-200"
                 }`}
               >
-                Teleoperation
-              </Button>
+                Gripper force feedback
+              </Label>
+              <p className="text-xs text-gray-500">
+                Feel resistance on the leader gripper when the follower grasps
+                something.
+              </p>
             </div>
-          </TooltipTrigger>
-          {teleopDisabled && (
-            <TooltipContent>Configure the robot first.</TooltipContent>
-          )}
-        </Tooltip>
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="w-full">
+                <Button
+                  onClick={() => onTeleop(robot, { gripperForceFeedback })}
+                  disabled={teleopDisabled}
+                  className={`w-full ${
+                    teleopDisabled
+                      ? "bg-red-500/30 hover:bg-red-500/30 text-red-200 cursor-not-allowed"
+                      : "bg-yellow-500 hover:bg-yellow-600 text-white"
+                  }`}
+                >
+                  Teleoperation
+                </Button>
+              </div>
+            </TooltipTrigger>
+            {teleopDisabled && (
+              <TooltipContent>Configure the robot first.</TooltipContent>
+            )}
+          </Tooltip>
+        </>
       )}
 
       {robot && (

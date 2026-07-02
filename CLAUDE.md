@@ -36,7 +36,7 @@ Run the Python tests with `pytest` (config in [pyproject.toml](pyproject.toml); 
 [server.py](lelab/server.py) is a thin FastAPI router. Each feature lives in its own module that owns its global state and exposes `handle_*` functions plus a Pydantic request model:
 
 - [record.py](lelab/record.py) — dataset recording (wraps `lerobot.record.record`); patches `lerobot.common.utils.control_utils` keyboard listener so frontend buttons replace arrow-key controls.
-- [teleoperate.py](lelab/teleoperate.py) — leader→follower teleoperation (wraps `lerobot.teleoperate`).
+- [teleoperate.py](lelab/teleoperate.py) — leader→follower teleoperation; optional gripper-only force feedback ([GRIPPER_FORCE_FEEDBACK.md](GRIPPER_FORCE_FEEDBACK.md)).
 - [calibrate.py](lelab/calibrate.py) — step-by-step web calibration with a `CalibrationManager` singleton and `_step_complete` threading.Event.
 - [train.py](lelab/train.py) — wraps the LeRobot training CLI as a subprocess (psutil for lifecycle, queue for log streaming).
 - [utils/config.py](lelab/utils/config.py) — shared paths and persistence: calibration JSON, saved ports, saved config selections. **Import shared constants from here, do not hardcode paths in feature modules.**

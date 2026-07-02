@@ -27,11 +27,77 @@ def test_teleoperate_request_rejects_missing_fields() -> None:
         TeleoperateRequest()
 
 
+def test_teleoperate_request_defaults_force_feedback_off() -> None:
+    from lelab.teleoperate import TeleoperateRequest
+
+    request = TeleoperateRequest(
+        leader_port="COM1",
+        follower_port="COM2",
+        leader_config="leader",
+        follower_config="follower",
+    )
+    assert request.gripper_force_feedback is False
+    assert request.gripper_force_feedback_gain == 1.0
+
+
+def test_gripper_feedback_targets_inactive_without_load() -> None:
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    goal, torque_limit, active = _gripper_feedback_targets(50.0, 55.0, 5.0, 1.0, None)
+    assert active is False
+    assert goal == 55.0
+    assert torque_limit == 150
+
+
+def test_gripper_feedback_targets_inactive_when_leader_not_past_follower() -> None:
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    goal, _, active = _gripper_feedback_targets(50.0, 50.5, 200.0, 1.0, None)
+    assert active is False
+    assert goal == 50.5
+
+
+def test_gripper_feedback_targets_wall_at_follower_position() -> None:
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    goal, torque_limit, active = _gripper_feedback_targets(50.0, 60.0, 200.0, 1.0, None)
+    assert active is True
+    assert goal == 50.0
+    assert torque_limit > 150
+
+
+def test_gripper_feedback_targets_inactive_when_releasing() -> None:
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    goal, _, active = _gripper_feedback_targets(50.0, 58.0, 200.0, 1.0, 60.0)
+    assert active is False
+    assert goal == 58.0
+
+
+def test_gripper_feedback_targets_wall_when_leader_below_follower() -> None:
+    """Works regardless of whether closing increases or decreases position."""
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    goal, torque_limit, active = _gripper_feedback_targets(50.0, 40.0, 200.0, 1.0, None)
+    assert active is True
+    assert goal == 50.0
+    assert torque_limit > 150
+
+
+def test_gripper_feedback_targets_scales_with_gain() -> None:
+    from lelab.teleoperate import _gripper_feedback_targets
+
+    _, low_gain_torque, _ = _gripper_feedback_targets(50.0, 65.0, 200.0, 0.5, None)
+    _, high_gain_torque, _ = _gripper_feedback_targets(50.0, 65.0, 200.0, 2.0, None)
+    assert high_gain_torque > low_gain_torque
+
+
 def test_handle_teleoperation_status_returns_dict() -> None:
     from lelab.teleoperate import handle_teleoperation_status
 
     result = handle_teleoperation_status()
     assert isinstance(result, dict)
+    assert "stop_reason" in result
 
 
 def test_handle_get_joint_positions_returns_dict_when_idle() -> None:
